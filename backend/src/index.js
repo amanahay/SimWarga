@@ -3958,13 +3958,14 @@ app.use("/api", api);
 const distDir = path.join(__dirname, "../../frontend/dist");
 const idxPath = path.join(distDir, "index.html");
 
+// Serve static assets with correct MIME types
+app.use(express.static(distDir));
+
 app.use((req, res) => {
   if (req.path.startsWith("/api"))
     return res.status(404).json({ error: "API route not found" });
-  const fp = path.join(distDir, req.path === "/" ? "index.html" : req.path);
-  try {
-    if (fs.existsSync(fp) && fs.statSync(fp).isFile()) return res.sendFile(fp);
-  } catch (e) {}
+  
+  // SPA fallback for Vue Router
   if (fs.existsSync(idxPath)) return res.sendFile(idxPath);
   res.status(404).send("Not Found");
 });
