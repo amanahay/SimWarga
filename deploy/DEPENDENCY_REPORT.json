@@ -1,0 +1,121 @@
+{
+  "timestamp": "2026-06-22T05:55:48.589Z",
+  "platform": "smarterasp.net (Node.js + IIS)",
+  "compatibility": {
+    "safe": [
+      {
+        "name": "bcryptjs",
+        "version": "^3.0.3",
+        "status": "SAFE",
+        "reason": "Pure JS implementation, no native bindings",
+        "env": "production"
+      },
+      {
+        "name": "cors",
+        "version": "^2.8.6",
+        "status": "SAFE",
+        "reason": "Pure middleware",
+        "env": "production"
+      },
+      {
+        "name": "dotenv",
+        "version": "^17.4.2",
+        "status": "SAFE",
+        "reason": "Pure config loader",
+        "env": "production"
+      },
+      {
+        "name": "express",
+        "version": "^5.2.1",
+        "status": "SAFE",
+        "reason": "Pure Node.js framework",
+        "env": "production"
+      },
+      {
+        "name": "jsonwebtoken",
+        "version": "^9.0.3",
+        "status": "SAFE",
+        "reason": "Pure JWT library",
+        "env": "production"
+      }
+    ],
+    "risky": [],
+    "unknown": []
+  },
+  "summary": {
+    "total": 5,
+    "safe": 5,
+    "risky": 0,
+    "unknown": 0
+  },
+  "recommendations": [
+    {
+      "level": "OK",
+      "message": "5 package(s) are production-ready and safe for shared hosting.",
+      "action": "No action required."
+    },
+    {
+      "level": "IMPORTANT",
+      "message": "smarterasp.net may restrict certain Node.js features.",
+      "action": "Consult documentation and test thoroughly before production deployment."
+    }
+  ],
+  "environment": {
+    "backendPackages": {
+      "bcryptjs": {
+        "version": "^3.0.3",
+        "status": "SAFE",
+        "reason": "Pure JS implementation, no native bindings",
+        "installed": "3.0.3",
+        "description": "Optimized bcrypt in plain JavaScript with zero dependencies, with TypeScript support. Compatible to 'bcrypt'."
+      },
+      "cors": {
+        "version": "^2.8.6",
+        "status": "SAFE",
+        "reason": "Pure middleware",
+        "installed": "2.8.6",
+        "description": "Node.js CORS middleware"
+      },
+      "dotenv": {
+        "version": "^17.4.2",
+        "status": "SAFE",
+        "reason": "Pure config loader",
+        "installed": "17.4.2",
+        "description": "Loads environment variables from .env file"
+      },
+      "express": {
+        "version": "^5.2.1",
+        "status": "SAFE",
+        "reason": "Pure Node.js framework",
+        "installed": "5.2.1",
+        "description": "Fast, unopinionated, minimalist web framework"
+      },
+      "jsonwebtoken": {
+        "version": "^9.0.3",
+        "status": "SAFE",
+        "reason": "Pure JWT library",
+        "installed": "9.0.3",
+        "description": "JSON Web Token implementation (symmetric and asymmetric)"
+      }
+    },
+    "frontendPackages": {
+      "axios": "frontend-only (not deployed)",
+      "chart.js": "frontend-only (not deployed)",
+      "class-variance-authority": "frontend-only (not deployed)",
+      "clsx": "frontend-only (not deployed)",
+      "leaflet": "frontend-only (not deployed)",
+      "lucide-vue-next": "frontend-only (not deployed)",
+      "pinia": "frontend-only (not deployed)",
+      "radix-vue": "frontend-only (not deployed)",
+      "tailwind-merge": "frontend-only (not deployed)",
+      "vue": "frontend-only (not deployed)",
+      "vue-router": "frontend-only (not deployed)",
+      "@tailwindcss/postcss": "dev-only (not deployed)",
+      "@vitejs/plugin-vue": "dev-only (not deployed)",
+      "autoprefixer": "dev-only (not deployed)",
+      "postcss": "dev-only (not deployed)",
+      "tailwindcss": "dev-only (not deployed)",
+      "vite": "dev-only (not deployed)"
+    }
+  }
+}

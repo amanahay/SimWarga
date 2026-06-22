@@ -1,0 +1,13 @@
+{
+  "name": "simwarga-production",
+  "version": "1.0.0",
+  "description": "SimWarga - Production Deployment",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "install": "cd backend && npm ci --omit=dev"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

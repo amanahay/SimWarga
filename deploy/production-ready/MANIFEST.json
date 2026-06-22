@@ -1,0 +1,46 @@
+{
+  "version": "1.0.0",
+  "date": "2026-06-22T06:10:52.211Z",
+  "platform": "smarterasp.net (Node.js + IIS)",
+  "structure": {
+    "backend": {
+      "src": "Backend source code (Express API)",
+      "simwarga.db": "SQLite database",
+      "package.json": "Backend dependencies",
+      "package-lock.json": "Lock file"
+    },
+    "frontend": {
+      "dist": "Static frontend build (Vue 3 + Vite)"
+    },
+    "root": {
+      "server.js": "Entry point for IIS",
+      "web.config": "IIS configuration",
+      ".htaccess": "Apache configuration (if applicable)",
+      "package.json": "Root deployment package",
+      ".env.example": "Environment template"
+    }
+  },
+  "notes": [
+    "This deployment package is production-ready",
+    "Configure .env file on the server before starting",
+    "Run \"npm ci --omit=dev\" in backend folder on server",
+    "Database file (simwarga.db) will auto-initialize on first run",
+    "Ensure folder write permissions for database storage",
+    "Requires Node.js >=22.5.0 because the backend uses built-in node:sqlite instead of native npm SQLite addons"
+  ],
+  "requirements": {
+    "nodeVersion": ">=22.5.0",
+    "platform": "Windows Server (IIS) or Linux (Apache/Nginx)",
+    "disk": "Minimum 500MB free space",
+    "memory": "Minimum 512MB RAM recommended"
+  },
+  "security": {
+    "important": [
+      "Change JWT_SECRET in .env to a strong random value",
+      "Configure ALLOWED_ORIGINS with your actual domain",
+      "Keep .env file secure and never commit to version control",
+      "Use HTTPS in production (enforce in web.config)",
+      "Regularly backup simwarga.db database"
+    ]
+  }
+}

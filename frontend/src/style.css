@@ -1,0 +1,28 @@
+@import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap");
+
+:root {
+    font-family:
+        "Inter",
+        system-ui,
+        -apple-system,
+        sans-serif;
+}
+
+body {
+    @apply bg-slate-50 text-slate-900;
+}
+
+/* Page headings — always visible in both modes */
+.page-heading {
+    color: #0f172a !important;
+}
+.dark .page-heading {
+    color: #f1f5f9 !important;
+}
+.page-subheading {
+    color: #475569 !important;
+}
+.dark .page-subheading {
+    color: #94a3b8 !important;
+}
