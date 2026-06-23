@@ -1,11 +1,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { tagihanAirAPI, tagihanIuranAPI } from '@/services/api'
+import { tagihanAirAPI, tagihanIuranAPI, pembayaranAirAPI } from '@/services/api'
 import Button from '@/components/ui/button/Button.vue'
 import Badge from '@/components/ui/badge/Badge.vue'
 import { useToast } from '@/components/ui/toast/use-toast'
-import { Loader2, Droplet, Calendar, RefreshCw, Search, Printer } from 'lucide-vue-next'
+import { Loader2, Droplet, Calendar, RefreshCw, Search, Printer, CreditCard, X } from 'lucide-vue-next'
 
 const app = useAppStore()
 const { toast } = useToast()
@@ -15,12 +15,18 @@ const loading = ref(false)
 const filterStatus = ref('')
 const searchQuery = ref('')
 const genTahun = ref(new Date().getFullYear())
-const genBulan = ref(String(new Date().getMonth()+1))
+const genBulan = ref(new Date().getMonth()+1)
 const bulanOpt = ['','Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des']
 const bulanList = bulanOpt.slice(1).map((l,i)=>({label:l,value:i+1}))
 const tahunOpt = Array.from({length:10},(_,i)=>new Date().getFullYear()+i)
 const page = ref(1)
 const perPage = 12
+
+// Payment Modal States
+const showPayModal = ref(false)
+const payingItem = ref(null)
+const paying = ref(false)
+const metodeBayar = ref('Tunai')
 
 function formatRp(n) { return 'Rp ' + Number(n||0).toLocaleString('id-ID') }
 function badgeVariant(s) { if(s==='Lunas') return 'success'; if(s==='Belum') return 'destructive'; return 'warning' }
@@ -40,7 +46,7 @@ const displayed = computed(() => filtered.value.slice((page.value-1)*perPage, pa
 async function fetchData() {
   loading.value = true
   try {
-    const [airRes, iurRes] = await Promise.all([tagihanAirAPI.list({}), tagihanIuranAPI.list({limit:500})])
+    const [airRes, iurRes] = await Promise.all([tagihanAirAPI.list({}), tagihanIuranAPI.list({ status: 'Belum' })])
     tagihan.value = airRes.data.data || []
     iuranData.value = iurRes.data.data || []
   } catch(e) { toast({title:'Gagal',description:e.message,variant:'destructive'}) }
@@ -57,6 +63,32 @@ async function generateTagihan() {
 }
 
 function goPage(p) { if(p>=1 && p<=totalPages.value) { page.value = p } }
+
+function openBayar(item) {
+  payingItem.value = item
+  metodeBayar.value = 'Tunai'
+  showPayModal.value = true
+}
+
+async function prosesBayar() {
+  if (!payingItem.value) return
+  paying.value = true
+  try {
+    await pembayaranAirAPI.create({
+      TagihanAirId: payingItem.value.Id,
+      JumlahBayar: payingItem.value.TotalTagihan,
+      MetodeBayar: metodeBayar.value,
+      Keterangan: 'Pembayaran Air otomatis dari halaman Tagihan Air'
+    })
+    toast({ title: 'Pembayaran berhasil', description: `Tagihan Air ${payingItem.value.NamaKepalaKK} - ${formatRp(payingItem.value.TotalTagihan)}`, variant: 'success' })
+    showPayModal.value = false
+    fetchData()
+  } catch(e) {
+    toast({ title: 'Gagal memproses pembayaran', description: e.response?.data?.error || e.message, variant: 'destructive' })
+  } finally {
+    paying.value = false
+  }
+}
 
 function printTagihan(t) {
   const warga = t.NamaKepalaKK||'-'
@@ -183,16 +215,73 @@ onMounted(() => { app.setPage('tagihan-air'); fetchData() })
           <div class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400"><Droplet class="h-3.5 w-3.5 text-slate-400" /><span>{{ t.Pemakaian||0 }} m³</span></div>
           <div class="text-lg font-bold text-slate-900 dark:text-slate-100">{{ formatRp(t.TotalTagihan) }}</div>
         </div>
-        <div class="px-5 pb-4"><button class="text-xs" style="color:#2563eb" @click="printTagihan(t)">🖨 Cetak Tagihan</button></div>
+        <div class="px-5 pb-4 flex gap-2">
+          <Button variant="outline" size="sm" class="flex-1 text-xs h-8" @click="printTagihan(t)">
+            <Printer class="h-3.5 w-3.5 mr-1" /> Cetak
+          </Button>
+          <Button v-if="t.StatusTagihan !== 'Lunas'" variant="default" size="sm" class="flex-1 text-xs h-8" @click="openBayar(t)">
+            <CreditCard class="h-3.5 w-3.5 mr-1" /> Bayar
+          </Button>
+        </div>
       </div>
     </div>
 
     <div v-if="totalPages>1" class="flex items-center justify-center gap-2 mt-6 text-sm">
       <button class="page-btn" :disabled="page<=1" @click="goPage(page-1)">‹</button><span class="text-slate-500">{{ page }}/{{ totalPages }}</span><button class="page-btn" :disabled="page>=totalPages" @click="goPage(page+1)">›</button>
     </div>
+
+    <!-- Payment Confirmation Modal -->
+    <div v-if="showPayModal && payingItem" class="fixed inset-0 z-[1100] flex items-center justify-center" style="background:rgba(0,0,0,0.5)">
+      <div class="w-full max-w-sm rounded-xl border shadow-2xl mx-4 p-6 modal-form">
+        <div class="flex items-center justify-between mb-4">
+          <h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary);">Konfirmasi Pembayaran Air</h3>
+          <button class="close-btn" @click="showPayModal=false">&times;</button>
+        </div>
+        <div class="space-y-3 mb-5">
+          <div style="font-size: 13px; color: var(--text-primary);" class="flex justify-between">
+            <span style="color: var(--text-secondary);">Warga</span>
+            <span style="font-weight: 600;">{{ payingItem.NamaKepalaKK }}</span>
+          </div>
+          <div style="font-size: 13px; color: var(--text-primary);" class="flex justify-between">
+            <span style="color: var(--text-secondary);">No. Meteran</span>
+            <span style="font-family: monospace;">{{ payingItem.NoMeteran }}</span>
+          </div>
+          <div style="font-size: 13px; color: var(--text-primary);" class="flex justify-between">
+            <span style="color: var(--text-secondary);">Periode</span>
+            <span>{{ payingItem.Periode }}</span>
+          </div>
+          <div style="font-size: 13px; color: var(--text-primary);" class="flex justify-between">
+            <span style="color: var(--text-secondary);">Pemakaian</span>
+            <span>{{ payingItem.Pemakaian || 0 }} m³</span>
+          </div>
+          <div style="font-size: 15px; font-weight: 700; color: var(--text-primary); border-top: 1px solid var(--border);" class="flex justify-between pt-2">
+            <span>Nominal</span>
+            <span>{{ formatRp(payingItem.TotalTagihan) }}</span>
+          </div>
+          <div>
+            <label class="form-label-custom">Metode Bayar</label>
+            <select v-model="metodeBayar" class="form-control-custom" style="font-size:13px">
+              <option>Tunai</option>
+              <option>Transfer</option>
+              <option>QRIS</option>
+            </select>
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <Button variant="outline" class="flex-1" @click="showPayModal=false">Batal</Button>
+          <Button variant="default" class="flex-1" :disabled="paying" @click="prosesBayar"><Loader2 v-if="paying" class="h-4 w-4 animate-spin" />{{ paying?'Memproses...':'Bayar' }}</Button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.modal-form {
+  background: var(--surface, #ffffff) !important;
+  border: 1px solid var(--border, #dde3ec) !important;
+}
+.close-btn{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;border:1px solid var(--border,#dde3ec);background:var(--surface-2,#f5f7fa);color:var(--text-secondary,#5a6a85);cursor:pointer;font-size:18px;line-height:1;transition:all .15s ease}
+.close-btn:hover{background:#ef4444;border-color:#ef4444;color:#fff}
 .page-btn{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;border:1px solid var(--border,#dde3ec);background:var(--surface,#fff);color:var(--text-secondary,#5a6a85);cursor:pointer;font-size:14px;transition:all .15s ease}.page-btn:hover:not(:disabled){background:var(--primary-soft,#e3f2fd);color:var(--primary,#1565c0)}.page-btn:disabled{opacity:.4;cursor:default}
 </style>

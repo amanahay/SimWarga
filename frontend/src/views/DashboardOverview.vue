@@ -76,15 +76,38 @@ async function loadData() {
 }
 
 function initCharts() {
+  const formatPeriod = (p) => {
+    if (!p) return ''
+    const parts = p.split('-')
+    if (parts.length !== 2) return p
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agt', 'Sep', 'Okt', 'Nov', 'Des']
+    const mIdx = parseInt(parts[1], 10) - 1
+    return (mIdx >= 0 && mIdx < 12) ? `${monthNames[mIdx]} ${parts[0].substring(2)}` : p
+  }
+
   const ctx1 = document.getElementById('chartAir')
   if (ctx1) {
+    const chartAirData = stats.value.chartAir || []
+    const maxTagihan = Math.max(...chartAirData.map(d => d.tagihan || 0), 0)
+    
+    let divisor = 1000000
+    let labelTagihan = 'Tagihan (Rp Juta)'
+    if (maxTagihan > 0 && maxTagihan < 1000000) {
+      divisor = 1000
+      labelTagihan = 'Tagihan (Rp Ribu)'
+    }
+    
+    const labels = chartAirData.map(d => formatPeriod(d.periode))
+    const pemakaianValues = chartAirData.map(d => d.pemakaian)
+    const tagihanValues = chartAirData.map(d => (d.tagihan || 0) / divisor)
+
     new Chart(ctx1, {
       type: 'bar',
       data: {
-        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun'],
+        labels: labels,
         datasets: [
-          { label: 'Pemakaian Air (m³)', data: [210, 195, 225, 208, 240, 218], backgroundColor: 'rgba(59,130,246,0.7)', borderRadius: 6 },
-          { label: 'Tagihan (Rp Juta)', data: [4.2, 3.9, 4.5, 4.1, 4.8, 4.3], backgroundColor: 'rgba(16,185,129,0.7)', borderRadius: 6 },
+          { label: 'Pemakaian Air (m³)', data: pemakaianValues, backgroundColor: 'rgba(59,130,246,0.7)', borderRadius: 6 },
+          { label: labelTagihan, data: tagihanValues, backgroundColor: 'rgba(16,185,129,0.7)', borderRadius: 6 },
         ],
       },
       options: {
@@ -98,17 +121,18 @@ function initCharts() {
 
   const ctx2 = document.getElementById('chartPie')
   if (ctx2) {
-    // Calculate status distribution
-    const totalTagihan = jatuhTempo.value.reduce((sum, item) => sum + (item.totalTagihan || 0), 0)
-    const belumBayarCount = jatuhTempo.value.filter(t => t.status === 'Belum').length
-    const sebagianCount = jatuhTempo.value.filter(t => t.status === 'Sebagian').length
-    const lunasCount = Math.max(0, stats.value.pelangganAir - belumBayarCount - sebagianCount)
+    const dist = stats.value.statusDistribution || { lunas: 0, belum: 0, sebagian: 0 }
 
     new Chart(ctx2, {
       type: 'doughnut',
       data: {
         labels: ['Lunas', 'Belum Bayar', 'Sebagian'],
-        datasets: [{ data: [lunasCount, belumBayarCount, sebagianCount], backgroundColor: ['rgba(16,185,129,0.8)', 'rgba(239,68,68,0.8)', 'rgba(245,158,11,0.8)'], borderWidth: 0, borderRadius: 4 }],
+        datasets: [{ 
+          data: [dist.lunas, dist.belum, dist.sebagian], 
+          backgroundColor: ['rgba(16,185,129,0.8)', 'rgba(239,68,68,0.8)', 'rgba(245,158,11,0.8)'], 
+          borderWidth: 0, 
+          borderRadius: 4 
+        }],
       },
       options: {
         responsive: true,

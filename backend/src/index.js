@@ -12,9 +12,14 @@ const PORT = process.env.PORT || 5001;
 const JWT_SECRET = process.env.JWT_SECRET || "simwarga-secret-key-2025";
 const allowedOrigins = [
   /^http:\/\/localhost:517\d$/,
+  /^http:\/\/localhost:\d+$/,
   "http://localhost:5001",
   "https://simwarga.itu.biz.id",
   "https://www.simwarga.itu.biz.id",
+  "https://demo.itu.biz.id",
+  "https://www.demo.itu.biz.id",
+  "http://demo.itu.biz.id",
+  "http://www.demo.itu.biz.id",
 ];
 
 app.use(
@@ -959,9 +964,21 @@ api.put("/profil", auth, (req, res) => {
   }
 });
 
+api.get("/public/tenants", (req, res) => {
+  try {
+    const list = db.prepare("SELECT Id, NamaTenant FROM Tenants WHERE IsAktif=1 ORDER BY NamaTenant").all();
+    res.json({ data: list });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 api.post("/public/register", (req, res) => {
   try {
-    const { Username, NamaLengkap, Password, NoHp, Alamat } = req.body;
+    const { TenantId, Username, NamaLengkap, Password, NoHp, Alamat } = req.body;
+    if (!TenantId) {
+      return res.status(400).json({ error: "Tenant wajib dipilih" });
+    }
     if (!Username || !NamaLengkap || !Password) {
       return res
         .status(400)
@@ -969,10 +986,10 @@ api.post("/public/register", (req, res) => {
     }
 
     const tenant = db
-      .prepare("SELECT Id FROM Tenants WHERE IsAktif=1 ORDER BY Id LIMIT 1")
-      .get();
+      .prepare("SELECT Id FROM Tenants WHERE Id=? AND IsAktif=1")
+      .get(TenantId);
     if (!tenant)
-      return res.status(400).json({ error: "Tenant aktif belum tersedia" });
+      return res.status(400).json({ error: "Tenant tidak ditemukan atau nonaktif" });
 
     const role = db
       .prepare("SELECT Id FROM Roles WHERE NamaRole='Warga'")
@@ -1037,34 +1054,173 @@ api.post("/public/register", (req, res) => {
   }
 });
 
+let superadminResetAttempts = 0;
+let superadminLockoutTime = null;
+
+api.post("/public/hard-reset-password", (req, res) => {
+  try {
+    const { PIN, NewPassword } = req.body;
+    
+    if (!PIN || !NewPassword) {
+      return res.status(400).json({ error: "PIN dan Password Baru wajib diisi" });
+    }
+    
+    if (!/^[0-9]+$/.test(PIN)) {
+      return res.status(400).json({ error: "PIN hanya boleh berupa angka" });
+    }
+    
+    if (superadminLockoutTime && Date.now() < superadminLockoutTime) {
+      const remainingMin = Math.ceil((superadminLockoutTime - Date.now()) / 60000);
+      return res.status(429).json({ error: `Terlalu banyak percobaan salah. Silakan coba lagi dalam ${remainingMin} menit.` });
+    }
+    
+    if (superadminLockoutTime && Date.now() >= superadminLockoutTime) {
+      superadminResetAttempts = 0;
+      superadminLockoutTime = null;
+    }
+    
+    const configuredPIN = process.env.SUPERADMIN_RESET_PIN || "262626";
+    if (PIN !== configuredPIN) {
+      superadminResetAttempts += 1;
+      if (superadminResetAttempts >= 5) {
+        superadminLockoutTime = Date.now() + 10 * 60 * 1000;
+        return res.status(429).json({ error: "Terlalu banyak percobaan salah. Akun terkunci. Silakan coba lagi dalam 10 menit." });
+      } else {
+        return res.status(400).json({ error: `PIN salah. Sisa percobaan: ${5 - superadminResetAttempts}` });
+      }
+    }
+    
+    superadminResetAttempts = 0;
+    superadminLockoutTime = null;
+    
+    const superadmin = db
+      .prepare(`
+        SELECT u.Id, u.Username, u.TenantId 
+        FROM Users u 
+        JOIN UserInRoles uir ON u.Id = uir.UserId 
+        JOIN Roles r ON uir.RoleId = r.Id 
+        WHERE r.NamaRole = 'SuperAdmin' 
+        LIMIT 1
+      `)
+      .get();
+      
+    if (!superadmin) {
+      return res.status(404).json({ error: "Akun SuperAdmin tidak ditemukan di database" });
+    }
+    
+    const salt = bcrypt.genSaltSync(10);
+    const hash = bcrypt.hashSync(NewPassword, salt);
+    
+    db.prepare("UPDATE Users SET PasswordHash=?, PasswordSalt=? WHERE Id=?").run(hash, salt, superadmin.Id);
+    
+    writeAuditLog({
+      tenantId: superadmin.TenantId,
+      userId: superadmin.Id,
+      username: superadmin.Username,
+      aksi: "RESET_PASSWORD_HARD",
+      modul: "Sistem",
+      recordId: String(superadmin.Id),
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"] || null,
+      keterangan: "Reset password superadmin via PIN hard-recovery berhasil",
+      dataBaru: {
+        Username: superadmin.Username
+      }
+    });
+    
+    res.json({ success: true, message: "Password SuperAdmin berhasil direset." });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ===== DASHBOARD =====
 api.get("/dashboard/stats", auth, (req, res) => {
   const tid = req.user.tenantId;
   const m = new Date().toISOString().substring(0, 7);
+
+  // 1. Core stats
+  const totalWarga = db
+    .prepare("SELECT COUNT(*) as c FROM Warga WHERE TenantId=? AND IsAktif=1")
+    .get(tid).c;
+  const pelangganAir = db
+    .prepare("SELECT COUNT(*) as c FROM Meteran WHERE TenantId=? AND IsAktif=1")
+    .get(tid).c;
+  const belumBayar = db
+    .prepare("SELECT COUNT(*) as c FROM TagihanAir WHERE TenantId=? AND StatusTagihan IN ('Belum','Sebagian')")
+    .get(tid).c;
+  const pendapatanAir = db
+    .prepare("SELECT COALESCE(SUM(JumlahBayar),0) as t FROM PembayaranAir WHERE TenantId=? AND strftime('%Y-%m',TanggalBayar)=?")
+    .get(tid, m).t;
+  const pendapatanIuran = db
+    .prepare("SELECT COALESCE(SUM(JumlahBayar),0) as t FROM PembayaranIuran WHERE TenantId=? AND strftime('%Y-%m',TanggalBayar)=?")
+    .get(tid, m).t;
+
+  // 2. Historical chart data (last 6 months of water usage & billing)
+  const chartRows = db
+    .prepare(`
+      SELECT 
+        Periode, 
+        COALESCE(SUM(Pemakaian), 0) as totalPemakaian, 
+        COALESCE(SUM(TotalTagihan), 0) as totalTagihan 
+      FROM TagihanAir 
+      WHERE TenantId=? 
+      GROUP BY Periode 
+      ORDER BY Periode DESC 
+      LIMIT 6
+    `)
+    .all(tid);
+  
+  chartRows.reverse();
+
+  let chartAir = [];
+  if (chartRows.length > 0) {
+    chartAir = chartRows.map(r => ({
+      periode: r.Periode,
+      pemakaian: r.totalPemakaian,
+      tagihan: r.totalTagihan
+    }));
+  } else {
+    // Fallback: Generate empty last 6 months
+    const date = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(date.getFullYear(), date.getMonth() - i, 1);
+      const p = d.toISOString().substring(0, 7);
+      chartAir.push({
+        periode: p,
+        pemakaian: 0,
+        tagihan: 0
+      });
+    }
+  }
+
+  // 3. Status distribution (overall)
+  const statusRows = db
+    .prepare(`
+      SELECT 
+        StatusTagihan, 
+        COUNT(*) as c 
+      FROM TagihanAir 
+      WHERE TenantId=? 
+      GROUP BY StatusTagihan
+    `)
+    .all(tid);
+
+  const statusDistribution = { lunas: 0, belum: 0, sebagian: 0 };
+  statusRows.forEach(r => {
+    if (r.StatusTagihan === 'Lunas') statusDistribution.lunas = r.c;
+    else if (r.StatusTagihan === 'Belum') statusDistribution.belum = r.c;
+    else if (r.StatusTagihan === 'Sebagian') statusDistribution.sebagian = r.c;
+  });
+
   res.json({
-    totalWarga: db
-      .prepare("SELECT COUNT(*) as c FROM Warga WHERE TenantId=? AND IsAktif=1")
-      .get(tid).c,
-    pelangganAir: db
-      .prepare(
-        "SELECT COUNT(*) as c FROM Meteran WHERE TenantId=? AND IsAktif=1",
-      )
-      .get(tid).c,
-    belumBayar: db
-      .prepare(
-        "SELECT COUNT(*) as c FROM TagihanAir WHERE TenantId=? AND StatusTagihan IN ('Belum','Sebagian')",
-      )
-      .get(tid).c,
-    pendapatanAir: db
-      .prepare(
-        "SELECT COALESCE(SUM(JumlahBayar),0) as t FROM PembayaranAir WHERE TenantId=? AND strftime('%Y-%m',TanggalBayar)=?",
-      )
-      .get(tid, m).t,
-    pendapatanIuran: db
-      .prepare(
-        "SELECT COALESCE(SUM(JumlahBayar),0) as t FROM PembayaranIuran WHERE TenantId=? AND strftime('%Y-%m',TanggalBayar)=?",
-      )
-      .get(tid, m).t,
+    totalWarga,
+    pelangganAir,
+    belumBayar,
+    pendapatanAir,
+    pendapatanIuran,
+    chartAir,
+    statusDistribution
   });
 });
 
@@ -1741,7 +1897,7 @@ api.get("/pembayaran-air", auth, (req, res) => {
   res.json({
     data: db
       .prepare(
-        "SELECT pa.*, w.NamaKepalaKK, w.Alamat, ta.Periode, ta.TotalTagihan FROM PembayaranAir pa JOIN TagihanAir ta ON pa.TagihanAirId=ta.Id JOIN Warga w ON ta.WargaId=w.Id WHERE pa.TenantId=? ORDER BY pa.Id DESC LIMIT 50",
+        "SELECT pa.*, w.NamaKepalaKK, w.Alamat, ta.Periode, ta.TotalTagihan, ta.Pemakaian, ta.HargaPerM3, m.NoMeteran, pm.StandAwal, pm.StandAkhir FROM PembayaranAir pa JOIN TagihanAir ta ON pa.TagihanAirId=ta.Id JOIN Warga w ON ta.WargaId=w.Id LEFT JOIN PencatatanMeteran pm ON ta.PencatatanId=pm.Id LEFT JOIN Meteran m ON pm.MeteranId=m.Id WHERE pa.TenantId=? ORDER BY pa.Id DESC LIMIT 50",
       )
       .all(req.user.tenantId),
   });
@@ -1755,7 +1911,7 @@ api.post("/pembayaran-air", auth, (req, res) => {
       Date.now() +
       "-" +
       Math.random().toString(36).substring(2, 6).toUpperCase();
-    db.prepare(
+    const payResult = db.prepare(
       "INSERT INTO PembayaranAir (TenantId,TagihanAirId,NomorTransaksi,JumlahBayar,MetodeBayar,KasirId,Keterangan) VALUES (?,?,?,?,?,?,?)",
     ).run(
       req.user.tenantId,
@@ -1766,6 +1922,7 @@ api.post("/pembayaran-air", auth, (req, res) => {
       req.user.userId,
       Keterangan,
     );
+    const payId = payResult.lastInsertRowid;
     const t = db
       .prepare("SELECT TotalTagihan FROM TagihanAir WHERE Id=?")
       .get(TagihanAirId);
@@ -1773,6 +1930,25 @@ api.post("/pembayaran-air", auth, (req, res) => {
       JumlahBayar >= t.TotalTagihan ? "Lunas" : "Sebagian",
       TagihanAirId,
     );
+
+    // Auto-create journal entry linked to PembayaranAir
+    db.prepare(
+      "INSERT INTO PAM_Transaksi (TenantId, Pemasukan, Pengeluaran, Hutang, TanggalTransaksi, Deskripsi, TanggalJurnal, JenisTransaksi, JenisKeterangan, SourceTable, SourceId, CreatedBy) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+    ).run(
+      req.user.tenantId,
+      JumlahBayar,
+      0,
+      0,
+      new Date().toISOString().slice(0, 10),
+      `Pembayaran air otomatis - No: ${no}${Keterangan ? ' - ' + Keterangan : ''}`,
+      new Date().toISOString().slice(0, 10),
+      "Pemasukan",
+      "Pembayaran Air",
+      "PembayaranAir",
+      payId,
+      req.user.userId
+    );
+
     res.status(201).json({ noTransaksi: no });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1948,7 +2124,7 @@ api.post("/pembayaran-iuran", auth, (req, res) => {
       Date.now() +
       "-" +
       Math.random().toString(36).substring(2, 6).toUpperCase();
-    db.prepare(
+    const payResult = db.prepare(
       "INSERT INTO PembayaranIuran (TenantId,TagihanIuranId,NomorTransaksi,JumlahBayar,MetodeBayar,KasirId) VALUES (?,?,?,?,?,?)",
     ).run(
       req.user.tenantId,
@@ -1958,10 +2134,36 @@ api.post("/pembayaran-iuran", auth, (req, res) => {
       MetodeBayar || "Tunai",
       req.user.userId,
     );
+    const payId = payResult.lastInsertRowid;
     db.prepare("UPDATE TagihanIuran SET StatusTagihan=? WHERE Id=?").run(
       "Lunas",
       TagihanIuranId,
     );
+
+    // Get iuran name for description
+    const iuranInfo = db.prepare(
+      "SELECT ji.NamaIuran FROM TagihanIuran ti JOIN JenisIuran ji ON ti.JenisIuranId = ji.Id WHERE ti.Id = ?"
+    ).get(TagihanIuranId);
+    const namaIuran = iuranInfo ? iuranInfo.NamaIuran : "Iuran";
+
+    // Auto-create journal entry linked to PembayaranIuran
+    db.prepare(
+      "INSERT INTO PAM_Transaksi (TenantId, Pemasukan, Pengeluaran, Hutang, TanggalTransaksi, Deskripsi, TanggalJurnal, JenisTransaksi, JenisKeterangan, SourceTable, SourceId, CreatedBy) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+    ).run(
+      req.user.tenantId,
+      JumlahBayar,
+      0,
+      0,
+      new Date().toISOString().slice(0, 10),
+      `Pembayaran iuran otomatis (${namaIuran}) - No: ${no}`,
+      new Date().toISOString().slice(0, 10),
+      "Pemasukan",
+      "Pembayaran Iuran",
+      "PembayaranIuran",
+      payId,
+      req.user.userId
+    );
+
     res.status(201).json({ noTransaksi: no });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1994,31 +2196,103 @@ api.post("/pengeluaran", auth, adminOnly, (req, res) => {
         Nominal,
         req.user.userId,
       );
-    res.status(201).json({ id: r.lastInsertRowid });
+    const expId = r.lastInsertRowid;
+
+    // Auto-create journal entry linked to Pengeluaran
+    db.prepare(
+      "INSERT INTO PAM_Transaksi (TenantId, Pemasukan, Pengeluaran, Hutang, TanggalTransaksi, Deskripsi, TanggalJurnal, JenisTransaksi, JenisKeterangan, SourceTable, SourceId, CreatedBy) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+    ).run(
+      req.user.tenantId,
+      0,
+      Nominal,
+      0,
+      Tanggal,
+      `Pengeluaran Kas otomatis - ${Keterangan}`,
+      Tanggal,
+      "Pengeluaran",
+      "Pengeluaran Kas",
+      "Pengeluaran",
+      expId,
+      req.user.userId
+    );
+
+    res.status(201).json({ id: expId });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 api.put("/pengeluaran/:id", auth, adminOnly, (req, res) => {
-  const { KategoriId, Tanggal, Keterangan, Nominal } = req.body;
-  db.prepare(
-    "UPDATE Pengeluaran SET KategoriId=?,Tanggal=?,Keterangan=?,Nominal=? WHERE Id=? AND TenantId=?",
-  ).run(
-    KategoriId,
-    Tanggal,
-    Keterangan,
-    Nominal,
-    req.params.id,
-    req.user.tenantId,
-  );
-  res.json({ success: true });
+  try {
+    const { KategoriId, Tanggal, Keterangan, Nominal } = req.body;
+    db.prepare(
+      "UPDATE Pengeluaran SET KategoriId=?,Tanggal=?,Keterangan=?,Nominal=? WHERE Id=? AND TenantId=?",
+    ).run(
+      KategoriId,
+      Tanggal,
+      Keterangan,
+      Nominal,
+      req.params.id,
+      req.user.tenantId,
+    );
+
+    // Sync to journal entry
+    const journal = db.prepare(
+      "SELECT Id FROM PAM_Transaksi WHERE SourceTable='Pengeluaran' AND SourceId=? AND TenantId=?"
+    ).get(req.params.id, req.user.tenantId);
+
+    if (journal) {
+      db.prepare(
+        "UPDATE PAM_Transaksi SET Pengeluaran=?, TanggalTransaksi=?, Deskripsi=?, TanggalJurnal=? WHERE Id=?"
+      ).run(
+        Nominal,
+        Tanggal,
+        `Pengeluaran Kas otomatis - ${Keterangan}`,
+        Tanggal,
+        journal.Id
+      );
+    } else {
+      db.prepare(
+        "INSERT INTO PAM_Transaksi (TenantId, Pemasukan, Pengeluaran, Hutang, TanggalTransaksi, Deskripsi, TanggalJurnal, JenisTransaksi, JenisKeterangan, SourceTable, SourceId, CreatedBy) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+      ).run(
+        req.user.tenantId,
+        0,
+        Nominal,
+        0,
+        Tanggal,
+        `Pengeluaran Kas otomatis - ${Keterangan}`,
+        Tanggal,
+        "Pengeluaran",
+        "Pengeluaran Kas",
+        "Pengeluaran",
+        req.params.id,
+        req.user.userId
+      );
+    }
+
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 api.delete("/pengeluaran/:id", auth, adminOnly, (req, res) => {
-  db.prepare("DELETE FROM Pengeluaran WHERE Id=? AND TenantId=?").run(
-    req.params.id,
-    req.user.tenantId,
-  );
-  res.json({ success: true });
+  try {
+    db.prepare("DELETE FROM Pengeluaran WHERE Id=? AND TenantId=?").run(
+      req.params.id,
+      req.user.tenantId,
+    );
+
+    // Sync: delete corresponding journal entry
+    db.prepare(
+      "DELETE FROM PAM_Transaksi WHERE SourceTable='Pengeluaran' AND SourceId=? AND TenantId=?"
+    ).run(
+      req.params.id,
+      req.user.tenantId
+    );
+
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ===== NERACA =====
@@ -2059,14 +2333,161 @@ api.get("/neraca", auth, (req, res) => {
           "SELECT COALESCE(SUM(Nominal),0) as t FROM Pengeluaran WHERE TenantId=? AND strftime('%Y-%m',Tanggal)=?",
         )
         .get(tid, m).t;
+
+  // Jurnal Transaksi
+  const pJurnalMasuk = all
+    ? db
+        .prepare(
+          "SELECT COALESCE(SUM(Pemasukan),0) as t FROM PAM_Transaksi WHERE TenantId=? AND JenisTransaksi='Pemasukan'",
+        )
+        .get(tid).t
+    : db
+        .prepare(
+          "SELECT COALESCE(SUM(Pemasukan),0) as t FROM PAM_Transaksi WHERE TenantId=? AND JenisTransaksi='Pemasukan' AND strftime('%Y-%m',TanggalTransaksi)=?",
+        )
+        .get(tid, m).t;
+
+  const pJurnalKeluar = all
+    ? db
+        .prepare(
+          "SELECT COALESCE(SUM(Pengeluaran),0) as t FROM PAM_Transaksi WHERE TenantId=? AND JenisTransaksi='Pengeluaran'",
+        )
+        .get(tid).t
+    : db
+        .prepare(
+          "SELECT COALESCE(SUM(Pengeluaran),0) as t FROM PAM_Transaksi WHERE TenantId=? AND JenisTransaksi='Pengeluaran' AND strftime('%Y-%m',TanggalTransaksi)=?",
+        )
+        .get(tid, m).t;
+
+  const pJurnalHutang = all
+    ? db
+        .prepare(
+          "SELECT COALESCE(SUM(Hutang),0) as t FROM PAM_Transaksi WHERE TenantId=? AND JenisTransaksi='Hutang'",
+        )
+        .get(tid).t
+    : db
+        .prepare(
+          "SELECT COALESCE(SUM(Hutang),0) as t FROM PAM_Transaksi WHERE TenantId=? AND JenisTransaksi='Hutang' AND strftime('%Y-%m',TanggalTransaksi)=?",
+        )
+        .get(tid, m).t;
+
   res.json({
     periode: all ? "Semua" : m,
     pemasukanAir: pa,
     pemasukanIuran: pi,
-    totalPemasukan: pa + pi,
+    pemasukanLain: pJurnalMasuk,
+    totalPemasukan: pa + pi + pJurnalMasuk,
     pengeluaran: pe,
-    saldo: pa + pi - pe,
+    pengeluaranLain: pJurnalKeluar,
+    totalPengeluaran: pe + pJurnalKeluar,
+    hutang: pJurnalHutang,
+    saldo: (pa + pi + pJurnalMasuk) - (pe + pJurnalKeluar) - pJurnalHutang,
   });
+});
+
+// ===== TRANSAKSI / JURNAL =====
+api.get("/transaksi", auth, (req, res) => {
+  try {
+    const tid = req.user.tenantId;
+    let query = "SELECT * FROM PAM_Transaksi WHERE TenantId=? ORDER BY TanggalTransaksi DESC, Id DESC";
+    let params = [tid];
+    
+    if (req.query.jenis) {
+      query = "SELECT * FROM PAM_Transaksi WHERE TenantId=? AND JenisTransaksi=? ORDER BY TanggalTransaksi DESC, Id DESC";
+      params.push(req.query.jenis);
+    }
+    
+    const data = db.prepare(query).all(...params);
+    res.json({ data });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+api.post("/transaksi", auth, adminOnly, (req, res) => {
+  try {
+    const { Pemasukan, Pengeluaran, Hutang, TanggalTransaksi, Deskripsi, TanggalJurnal, JenisTransaksi, JenisKeterangan } = req.body;
+    
+    if (!TanggalTransaksi) {
+      return res.status(400).json({ error: "TanggalTransaksi wajib diisi" });
+    }
+    if (!JenisTransaksi) {
+      return res.status(400).json({ error: "JenisTransaksi wajib diisi ('Pemasukan', 'Pengeluaran', 'Hutang')" });
+    }
+
+    const tJurnal = TanggalJurnal || TanggalTransaksi;
+    const pem = Pemasukan ? parseFloat(Pemasukan) : 0;
+    const pen = Pengeluaran ? parseFloat(Pengeluaran) : 0;
+    const hut = Hutang ? parseFloat(Hutang) : 0;
+
+    const r = db
+      .prepare(
+        "INSERT INTO PAM_Transaksi (TenantId, Pemasukan, Pengeluaran, Hutang, TanggalTransaksi, Deskripsi, TanggalJurnal, JenisTransaksi, JenisKeterangan, CreatedBy) VALUES (?,?,?,?,?,?,?,?,?,?)"
+      )
+      .run(
+        req.user.tenantId,
+        pem,
+        pen,
+        hut,
+        TanggalTransaksi,
+        Deskripsi || null,
+        tJurnal,
+        JenisTransaksi,
+        JenisKeterangan || null,
+        req.user.userId
+      );
+    res.status(201).json({ id: r.lastInsertRowid });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+api.put("/transaksi/:id", auth, adminOnly, (req, res) => {
+  try {
+    const { Pemasukan, Pengeluaran, Hutang, TanggalTransaksi, Deskripsi, TanggalJurnal, JenisTransaksi, JenisKeterangan } = req.body;
+    
+    if (!TanggalTransaksi) {
+      return res.status(400).json({ error: "TanggalTransaksi wajib diisi" });
+    }
+    if (!JenisTransaksi) {
+      return res.status(400).json({ error: "JenisTransaksi wajib diisi" });
+    }
+
+    const tJurnal = TanggalJurnal || TanggalTransaksi;
+    const pem = Pemasukan ? parseFloat(Pemasukan) : 0;
+    const pen = Pengeluaran ? parseFloat(Pengeluaran) : 0;
+    const hut = Hutang ? parseFloat(Hutang) : 0;
+
+    db.prepare(
+      "UPDATE PAM_Transaksi SET Pemasukan=?, Pengeluaran=?, Hutang=?, TanggalTransaksi=?, Deskripsi=?, TanggalJurnal=?, JenisTransaksi=?, JenisKeterangan=? WHERE Id=? AND TenantId=?"
+    ).run(
+      pem,
+      pen,
+      hut,
+      TanggalTransaksi,
+      Deskripsi || null,
+      tJurnal,
+      JenisTransaksi,
+      JenisKeterangan || null,
+      req.params.id,
+      req.user.tenantId
+    );
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+api.delete("/transaksi/:id", auth, adminOnly, (req, res) => {
+  try {
+    db.prepare("DELETE FROM PAM_Transaksi WHERE Id=? AND TenantId=?").run(
+      req.params.id,
+      req.user.tenantId
+    );
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ===== E-SURAT =====
@@ -3955,15 +4376,44 @@ api.get("/public/kontak-darurat", (req, res) => {
 // ===== MOUNT API + SPA FALLBACK =====
 app.use("/api", api);
 
-const distDir = path.join(__dirname, "../../frontend/dist");
+const distCandidates = [
+  path.join(__dirname, "../../frontend/dist"),
+  path.join(process.cwd(), "frontend/dist"),
+  path.join(process.cwd(), "frontend"),
+  path.join(__dirname, "../frontend/dist"),
+];
+const distDir =
+  distCandidates.find((candidate) =>
+    fs.existsSync(path.join(candidate, "index.html")),
+  ) || distCandidates[0];
 const idxPath = path.join(distDir, "index.html");
+const assetsDir = path.join(distDir, "assets");
 
-// Serve static assets with correct MIME types
-app.use(express.static(distDir));
+app.use(
+  "/assets",
+  express.static(assetsDir, {
+    fallthrough: false,
+    immutable: true,
+    maxAge: "1y",
+  }),
+);
+app.use(
+  express.static(distDir, {
+    index: false,
+    fallthrough: true,
+  }),
+);
 
 app.use((req, res) => {
   if (req.path.startsWith("/api"))
     return res.status(404).json({ error: "API route not found" });
+  if (
+    req.path.startsWith("/assets/") ||
+    req.path === "/favicon.svg" ||
+    req.path === "/icons.svg"
+  ) {
+    return res.status(404).type("text/plain").send("Static asset not found");
+  }
   
   // SPA fallback for Vue Router
   if (fs.existsSync(idxPath)) return res.sendFile(idxPath);
@@ -3974,8 +4424,9 @@ app.listen(PORT, () => {
   console.log(
     `\n  SimWarga v3.0 | Backend: http://localhost:${PORT} | Frontend: http://localhost:5173`,
   );
+  console.log(`  Static frontend: ${distDir}`);
   console.log(
     `  Login: POST /api/auth/login | Gunakan username dan password yang sudah tersedia.`,
   );
-  console.log(`  Domain: simwarga.itu.biz.id\n`);
+  console.log(`  Domain: demo.itu.biz.id\n`);
 });

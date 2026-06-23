@@ -129,6 +129,14 @@ export const pengeluaranAPI = {
   delete: (id) => api.delete(`/pengeluaran/${id}`),
 };
 
+// Transaksi / Jurnal
+export const transaksiAPI = {
+  list: (params) => api.get("/transaksi", { params }),
+  create: (data) => api.post("/transaksi", data),
+  update: (id, data) => api.put(`/transaksi/${id}`, data),
+  delete: (id) => api.delete(`/transaksi/${id}`),
+};
+
 // Neraca
 export const neracaAPI = {
   get: (config) => api.get("/neraca", config),
@@ -246,6 +254,8 @@ export const publicAPI = {
   announcements: () => api.get("/public/announcements"),
   pengumuman: (params) => api.get("/public/pengumuman", { params }),
   register: (data) => api.post("/public/register", data),
+  tenants: () => api.get("/public/tenants"),
+  hardResetPassword: (data) => api.post("/public/hard-reset-password", data),
 };
 
 // Pengumuman

@@ -465,6 +465,27 @@ CREATE TABLE IF NOT EXISTS AppSettings (
 );
 
 -- ============================================================
+-- BAGIAN 18: PENCATATAN JURNAL / TRANSAKSI
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS PAM_Transaksi (
+    Id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    TenantId            INTEGER NOT NULL REFERENCES Tenants(Id) ON DELETE CASCADE,
+    Pemasukan           REAL DEFAULT 0,
+    Pengeluaran         REAL DEFAULT 0,
+    Hutang              REAL DEFAULT 0,
+    TanggalTransaksi    TEXT NOT NULL,
+    Deskripsi           TEXT,
+    TanggalJurnal       TEXT,
+    JenisTransaksi      TEXT, -- 'Pemasukan', 'Pengeluaran', 'Hutang'
+    JenisKeterangan     TEXT, -- e.g. 'Kas Masuk', 'Kas Keluar', 'Iuran', 'Hutang Warga', dll
+    SourceTable         TEXT, -- 'PembayaranAir', 'PembayaranIuran', 'Pengeluaran'
+    SourceId            INTEGER,
+    CreatedAt           TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    CreatedBy           INTEGER REFERENCES Users(Id)
+);
+
+-- ============================================================
 -- INDEX — untuk performa query umum
 -- ============================================================
 
@@ -486,6 +507,8 @@ CREATE INDEX IF NOT EXISTS idx_surat_status         ON Surat(Status);
 CREATE INDEX IF NOT EXISTS idx_pengaduan_status     ON Pengaduan(Status);
 CREATE INDEX IF NOT EXISTS idx_sessions_token       ON UserSessions(RefreshToken);
 CREATE INDEX IF NOT EXISTS idx_sessions_user        ON UserSessions(UserId, IsRevoked);
+CREATE INDEX IF NOT EXISTS idx_pam_transaksi_tenant ON PAM_Transaksi(TenantId);
+CREATE INDEX IF NOT EXISTS idx_pam_transaksi_tanggal ON PAM_Transaksi(TanggalTransaksi);
 
 -- ============================================================
 -- SEED DATA — Data awal wajib ada

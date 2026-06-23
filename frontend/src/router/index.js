@@ -17,6 +17,11 @@ const routes = [
     component: () => import("../views/RegisterPortal.vue"),
   },
   {
+    path: "/hard-password",
+    name: "HardPassword",
+    component: () => import("../views/HardPassword.vue"),
+  },
+  {
     path: "/app",
     component: () => import("../components/layout/AppLayout.vue"),
     redirect: "/app/dashboard",
@@ -91,6 +96,11 @@ const routes = [
         path: "pengeluaran",
         name: "pengeluaran",
         component: () => import("../views/PengeluaranKas.vue"),
+      },
+      {
+        path: "jurnal",
+        name: "jurnal",
+        component: () => import("../views/PencatatanJurnal.vue"),
       },
       {
         path: "neraca",

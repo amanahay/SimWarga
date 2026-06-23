@@ -27,6 +27,36 @@ try {
       console.warn('[DB] WARNING: simwarga_schema.sql not found at', schemaPath)
     }
   }
+
+  // Ensure PAM_Transaksi and its indexes exist (migration check)
+  rawDb.exec(`
+    CREATE TABLE IF NOT EXISTS PAM_Transaksi (
+        Id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        TenantId            INTEGER NOT NULL REFERENCES Tenants(Id) ON DELETE CASCADE,
+        Pemasukan           REAL DEFAULT 0,
+        Pengeluaran         REAL DEFAULT 0,
+        Hutang              REAL DEFAULT 0,
+        TanggalTransaksi    TEXT NOT NULL,
+        Deskripsi           TEXT,
+        TanggalJurnal       TEXT,
+        JenisTransaksi      TEXT,
+        JenisKeterangan     TEXT,
+        SourceTable         TEXT,
+        SourceId            INTEGER,
+        CreatedAt           TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        CreatedBy           INTEGER REFERENCES Users(Id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_pam_transaksi_tenant ON PAM_Transaksi(TenantId);
+    CREATE INDEX IF NOT EXISTS idx_pam_transaksi_tanggal ON PAM_Transaksi(TanggalTransaksi);
+  `);
+
+  // Alter existing table to add columns if they don't exist
+  try {
+    rawDb.exec("ALTER TABLE PAM_Transaksi ADD COLUMN SourceTable TEXT;");
+  } catch (e) {}
+  try {
+    rawDb.exec("ALTER TABLE PAM_Transaksi ADD COLUMN SourceId INTEGER;");
+  } catch (e) {}
 } catch (err) {
   console.error('[DB] Error during auto-initialization:', err)
 }

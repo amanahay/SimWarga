@@ -26,7 +26,6 @@
                 :disabled="auth.isLoggingIn"
                 class="form-control-custom"
                 style="padding-left: 38px"
-                placeholder="superadmin"
                 :class="{ 'border-red-400 focus:border-red-500 focus:ring-red-200': errors.username }"
               />
               <User class="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -45,7 +44,6 @@
                 :disabled="auth.isLoggingIn"
                 class="form-control-custom"
                 style="padding-left: 38px; padding-right: 38px"
-                placeholder="••••••••"
                 :class="{ 'border-red-400 focus:border-red-500 focus:ring-red-200': errors.password }"
               />
               <Lock class="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -124,21 +122,36 @@ const { toast } = useToast()
 
 const showPassword = ref(false)
 const errors = reactive({ username: '', password: '' })
-const form = reactive({ username: 'superadmin', password: 'admin123' })
+const form = reactive({ username: '', password: '' })
 
 function validate() {
   errors.username = ''
   errors.password = ''
   let valid = true
 
-  if (!form.username.trim()) {
+  const usernameVal = form.username.trim()
+
+  if (!usernameVal) {
     errors.username = 'Username wajib diisi'
     toast({ title: 'Validasi Gagal', description: 'Username tidak boleh kosong.', variant: 'destructive' })
     valid = false
+  } else if (/\s/.test(form.username)) {
+    errors.username = 'Username tidak boleh mengandung spasi'
+    toast({ title: 'Validasi Gagal', description: 'Username tidak boleh mengandung spasi.', variant: 'destructive' })
+    valid = false
+  } else if (!/^[a-zA-Z0-9]+$/.test(usernameVal)) {
+    errors.username = 'Username hanya boleh huruf dan angka'
+    toast({ title: 'Validasi Gagal', description: 'Username hanya boleh berupa huruf dan angka tanpa spasi.', variant: 'destructive' })
+    valid = false
   }
+
   if (!form.password) {
     errors.password = 'Password wajib diisi'
     if (valid) toast({ title: 'Validasi Gagal', description: 'Password tidak boleh kosong.', variant: 'destructive' })
+    valid = false
+  } else if (/\s/.test(form.password)) {
+    errors.password = 'Password tidak boleh mengandung spasi'
+    if (valid) toast({ title: 'Validasi Gagal', description: 'Password tidak boleh mengandung spasi.', variant: 'destructive' })
     valid = false
   } else if (form.password.length < 3) {
     errors.password = 'Password minimal 3 karakter'

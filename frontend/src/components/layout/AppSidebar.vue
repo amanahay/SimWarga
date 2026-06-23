@@ -59,6 +59,9 @@
 
       <template v-if="!isWarga">
         <div class="sidebar-section">Keuangan</div>
+        <button class="nav-item-sidebar" :class="{ active: app.currentPage === 'jurnal' }" @click="navigate('jurnal')">
+          <i class="bi bi-journal-text"></i> Pencatatan Jurnal
+        </button>
         <button class="nav-item-sidebar" :class="{ active: app.currentPage === 'pengeluaran' }" @click="navigate('pengeluaran')">
           <i class="bi bi-arrow-up-circle-fill"></i> Pengeluaran Kas
         </button>

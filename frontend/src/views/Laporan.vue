@@ -12,8 +12,22 @@ const iuranStats = ref({ total: 0, lunas: 0, belum: 0 })
 const tahun = ref(new Date().getFullYear())
 const bulan = ref(new Date().getMonth() + 1)
 
+const bulanList = [
+  { value: 1, label: 'Januari' },
+  { value: 2, label: 'Februari' },
+  { value: 3, label: 'Maret' },
+  { value: 4, label: 'April' },
+  { value: 5, label: 'Mei' },
+  { value: 6, label: 'Juni' },
+  { value: 7, label: 'Juli' },
+  { value: 8, label: 'Agustus' },
+  { value: 9, label: 'September' },
+  { value: 10, label: 'Oktober' },
+  { value: 11, label: 'November' },
+  { value: 12, label: 'Desember' }
+]
+
 const tahunOptions = Array.from({length:6},(_,i)=>2025+i)
-const bulanNames = ['','Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember']
 
 function formatRp(n) { return 'Rp ' + Number(n||0).toLocaleString('id-ID') }
 function periode() { return `${tahun.value}-${String(bulan.value).padStart(2,'0')}` }
@@ -38,8 +52,11 @@ function printLaporan() {
 <h3>Ringkasan Keuangan</h3><div class="card">
 <div class="row"><span>Pemasukan Air</span><span class="green">+ Rp ${Number(n.pemasukanAir||0).toLocaleString('id-ID')}</span></div>
 <div class="row"><span>Pemasukan Iuran</span><span class="green">+ Rp ${Number(n.pemasukanIuran||0).toLocaleString('id-ID')}</span></div>
-<div class="row"><span>Pengeluaran</span><span class="red">- Rp ${Number(n.pengeluaran||0).toLocaleString('id-ID')}</span></div>
-<div class="row total"><span>SALDO</span><span class="${n.saldo>=0?'green':'red'}">Rp ${Number(n.saldo||0).toLocaleString('id-ID')}</span></div>
+<div class="row"><span>Pemasukan Jurnal Lain</span><span class="green">+ Rp ${Number(n.pemasukanLain||0).toLocaleString('id-ID')}</span></div>
+<div class="row"><span>Pengeluaran Kas Operasional</span><span class="red">- Rp ${Number(n.pengeluaran||0).toLocaleString('id-ID')}</span></div>
+<div class="row"><span>Pengeluaran Jurnal Lain</span><span class="red">- Rp ${Number(n.pengeluaranLain||0).toLocaleString('id-ID')}</span></div>
+<div class="row"><span>Total Hutang (Jurnal)</span><span style="color:#d97706">Rp ${Number(n.hutang||0).toLocaleString('id-ID')}</span></div>
+<div class="row total"><span>SALDO KAS</span><span class="${n.saldo>=0?'green':'red'}">Rp ${Number(n.saldo||0).toLocaleString('id-ID')}</span></div>
 </div>
 <h3>Kolektibilitas Iuran</h3><div class="card">
 <div class="row"><span>Total Tagihan</span><span>Rp ${Number(i.total||0).toLocaleString('id-ID')}</span></div>
@@ -66,7 +83,7 @@ onMounted(()=>{ app.setPage('laporan'); fetchData() })
         <p class="page-subheading text-xs sm:text-sm mt-0.5">Laporan keuangan & iuran periode {{ neraca.periode || '-' }}</p>
       </div>
       <div class="flex gap-2 items-end">
-        <div style="min-width:80px"><label class="form-label-custom">Bulan</label><select v-model="bulan" class="form-control-custom" style="font-size:12px"><option v-for="(b,i) in bulanNames" v-if="i>0" :key="i" :value="i">{{ b }}</option></select></div>
+        <div style="min-width:80px"><label class="form-label-custom">Bulan</label><select v-model="bulan" class="form-control-custom" style="font-size:12px"><option v-for="b in bulanList" :key="b.value" :value="b.value">{{ b.label }}</option></select></div>
         <div style="min-width:80px"><label class="form-label-custom">Tahun</label><select v-model="tahun" class="form-control-custom" style="font-size:12px"><option v-for="y in tahunOptions" :key="y" :value="y">{{ y }}</option></select></div>
         <Button variant="outline" size="sm" class="text-xs h-9 px-3" @click="printLaporan"><Printer class="h-3.5 w-3.5" /> Print</Button>
       </div>
@@ -75,21 +92,21 @@ onMounted(()=>{ app.setPage('laporan'); fetchData() })
     <div v-if="loading" class="flex justify-center py-20"><Loader2 class="h-8 w-8 animate-spin text-indigo-600" /></div>
 
     <template v-else>
-      <h3 class="text-base font-bold mb-3" style="color:#0f172a"><Wallet class="h-4 w-4 inline" /> Ringkasan Keuangan</h3>
+      <h3 class="text-base font-bold mb-3" style="color: var(--text-primary);"><Wallet class="h-4 w-4 inline mr-1" /> Ringkasan Keuangan</h3>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div class="rounded-xl border p-4 shadow-sm" style="background:#ecfdf5;border-color:#a7f3d0"><div class="text-xs font-medium" style="color:#065f46">Pemasukan Air</div><div class="text-lg font-bold mt-1" style="color:#065f46">{{ formatRp(neraca.pemasukanAir) }}</div></div>
-        <div class="rounded-xl border p-4 shadow-sm" style="background:#eff6ff;border-color:#bfdbfe"><div class="text-xs font-medium" style="color:#1e40af">Pemasukan Iuran</div><div class="text-lg font-bold mt-1" style="color:#1e40af">{{ formatRp(neraca.pemasukanIuran) }}</div></div>
-        <div class="rounded-xl border p-4 shadow-sm" style="background:#fef2f2;border-color:#fecaca"><div class="text-xs font-medium" style="color:#991b1b">Pengeluaran</div><div class="text-lg font-bold mt-1" style="color:#991b1b">{{ formatRp(neraca.pengeluaran) }}</div></div>
-        <div class="rounded-xl border p-4 shadow-sm" style="background:#ecfeff;border-color:#a5f3fc"><div class="text-xs font-medium" style="color:#155e75">Saldo</div><div class="text-lg font-bold mt-1" style="color:#155e75">{{ formatRp(neraca.saldo) }}</div></div>
+        <div class="rounded-xl border p-4 shadow-sm" style="background: var(--secondary-soft); border-color: rgba(46, 125, 50, 0.3);"><div class="text-xs font-medium" style="color: var(--secondary);">Total Pemasukan</div><div class="text-lg font-bold mt-1" style="color: var(--secondary);">{{ formatRp(neraca.totalPemasukan) }}</div></div>
+        <div class="rounded-xl border p-4 shadow-sm" style="background: var(--danger-soft); border-color: rgba(198, 40, 40, 0.3);"><div class="text-xs font-medium" style="color: var(--danger);">Total Pengeluaran</div><div class="text-lg font-bold mt-1" style="color: var(--danger);">{{ formatRp(neraca.totalPengeluaran) }}</div></div>
+        <div class="rounded-xl border p-4 shadow-sm" style="background: var(--warning-soft); border-color: rgba(245, 124, 0, 0.3);"><div class="text-xs font-medium" style="color: var(--warning);">Total Hutang</div><div class="text-lg font-bold mt-1" style="color: var(--warning);">{{ formatRp(neraca.hutang) }}</div></div>
+        <div class="rounded-xl border p-4 shadow-sm" style="background: var(--primary-soft); border-color: rgba(21, 101, 192, 0.3);"><div class="text-xs font-medium" style="color: var(--primary);">Saldo Kas</div><div class="text-lg font-bold mt-1" style="color: var(--primary);">{{ formatRp(neraca.saldo) }}</div></div>
       </div>
 
-      <h3 class="text-base font-bold mb-3" style="color:#0f172a"><PieChart class="h-4 w-4 inline" /> Kolektibilitas Iuran</h3>
+      <h3 class="text-base font-bold mb-3" style="color: var(--text-primary);"><PieChart class="h-4 w-4 inline mr-1" /> Kolektibilitas Iuran</h3>
       <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
-        <div class="rounded-xl border p-4 shadow-sm" style="background:#eff6ff;border-color:#bfdbfe"><div class="text-xs font-medium" style="color:#1e40af">Total Tagihan</div><div class="text-lg font-bold mt-1" style="color:#1e40af">{{ formatRp(iuranStats.total) }}</div></div>
-        <div class="rounded-xl border p-4 shadow-sm" style="background:#ecfdf5;border-color:#a7f3d0"><div class="text-xs font-medium" style="color:#065f46">Sudah Lunas</div><div class="text-lg font-bold mt-1" style="color:#065f46">{{ formatRp(iuranStats.lunas) }}</div></div>
-        <div class="rounded-xl border p-4 shadow-sm" style="background:#fef2f2;border-color:#fecaca"><div class="text-xs font-medium" style="color:#991b1b">Belum Lunas</div><div class="text-lg font-bold mt-1" style="color:#991b1b">{{ formatRp(iuranStats.belum) }}</div></div>
+        <div class="rounded-xl border p-4 shadow-sm" style="background: var(--primary-soft); border-color: rgba(21, 101, 192, 0.3);"><div class="text-xs font-medium" style="color: var(--primary);">Total Tagihan</div><div class="text-lg font-bold mt-1" style="color: var(--primary);">{{ formatRp(iuranStats.total) }}</div></div>
+        <div class="rounded-xl border p-4 shadow-sm" style="background: var(--secondary-soft); border-color: rgba(46, 125, 50, 0.3);"><div class="text-xs font-medium" style="color: var(--secondary);">Sudah Lunas</div><div class="text-lg font-bold mt-1" style="color: var(--secondary);">{{ formatRp(iuranStats.lunas) }}</div></div>
+        <div class="rounded-xl border p-4 shadow-sm" style="background: var(--danger-soft); border-color: rgba(198, 40, 40, 0.3);"><div class="text-xs font-medium" style="color: var(--danger);">Belum Lunas</div><div class="text-lg font-bold mt-1" style="color: var(--danger);">{{ formatRp(iuranStats.belum) }}</div></div>
       </div>
-      <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 mb-6">
+      <div class="card p-4 mb-6">
         <div style="height:12px;background:#e2e8f0;border-radius:6px;overflow:hidden">
           <div :style="{width: iuranStats.total ? (iuranStats.lunas/iuranStats.total*100)+'%' : '0%', height:'100%', background:'#059669', borderRadius:'6px', transition:'width .3s'}"></div>
         </div>
